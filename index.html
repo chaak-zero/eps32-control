@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ESP32 Charge Control</title>
+</head>
+<body>
+  <h2>ESP32 充電制御</h2>
+  <button onclick="sendCmd('off')">充電停止 (OFF)</button>
+  <button onclick="sendCmd('on')">充電開始 (ON)</button>
+
+  <script>
+    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+    async function sendCmd(cmd) {
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'ESP32_Charge_Controller' }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        const encoder = new TextEncoder();
+        await characteristic.writeValue(encoder.encode(cmd));
+
+        console.log("Sent: " + cmd);
+        device.gatt.disconnect();
+      } catch (error) {
+        console.error("BLE Error: ", error);
+      }
+    }
+
+    // URLパラメータ (?cmd=off または ?cmd=on) が付いて起動された場合は自動実行
+    window.onload = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const cmd = urlParams.get('cmd');
+      if (cmd) {
+        sendCmd(cmd);
+      }
+    };
+  </script>
+</body>
+</html>
