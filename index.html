@@ -11,13 +11,13 @@
   <button onclick="sendCmd('on')">充電開始 (ON)</button>
 
   <script>
-    // ★ESP32側と完全一致させたUUID
     const SERVICE_UUID        = "4fa8f24c-038e-45b0-93e9-2b006836c256";
     const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
     async function sendCmd(cmd) {
+      let device = null;
       try {
-        const device = await navigator.bluetooth.requestDevice({
+        device = await navigator.bluetooth.requestDevice({
           filters: [{ name: 'ESP32_Charge_Controller' }],
           optionalServices: [SERVICE_UUID]
         });
@@ -26,30 +26,28 @@
         const service = await server.getPrimaryService(SERVICE_UUID);
         const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-        // コマンド送信 ("OFF" または "ON")
         const encoder = new TextEncoder();
         await characteristic.writeValue(encoder.encode(cmd.toUpperCase()));
 
-        // 送信後に切断
+        // データ送信完了後、少し待ってから明示的に切断
+        await new Promise(resolve => setTimeout(resolve, 300));
         await device.gatt.disconnect();
       } catch (error) {
-        alert("BLE Error: " + error);
+        // エラーダイアログを出さずにログのみ出力
+        console.log("BLE Notice: " + error);
       }
     }
 
-    // URLパラメータ(?cmd=off 等)による自動実行
+    // URLパラメータ(?cmd=off や ?cmd=on)の自動実行処理
     window.onload = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const cmd = urlParams.get('cmd');
       if (cmd) {
-      // 1. コマンド送信実行
-      await sendCmd(cmd);
-    
-      // 2. 次回のショートカット呼び出しで再読み込みさせるため、パラメータをクリア
-      window.history.replaceState({}, document.title, window.location.pathname);
+        await sendCmd(cmd);
+        // パラメータを消去して次回の自動読み込みを正常化
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     };
-
   </script>
 </body>
 </html>
