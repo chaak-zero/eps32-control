@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ESP32 Charge Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 充電制御</title>
 </head>
 <body>
   <h2>ESP32 充電制御</h2>
@@ -10,7 +11,8 @@
   <button onclick="sendCmd('on')">充電開始 (ON)</button>
 
   <script>
-    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    // ★ESP32側と完全一致させたUUID
+    const SERVICE_UUID        = "4fa8f24c-038e-45b0-93e9-2b006836c256";
     const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
     async function sendCmd(cmd) {
@@ -24,17 +26,18 @@
         const service = await server.getPrimaryService(SERVICE_UUID);
         const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
+        // コマンド送信 ("OFF" または "ON")
         const encoder = new TextEncoder();
-        await characteristic.writeValue(encoder.encode(cmd));
+        await characteristic.writeValue(encoder.encode(cmd.toUpperCase()));
 
-        console.log("Sent: " + cmd);
-        device.gatt.disconnect();
+        // 送信後に切断
+        await device.gatt.disconnect();
       } catch (error) {
-        console.error("BLE Error: ", error);
+        alert("BLE Error: " + error);
       }
     }
 
-    // URLパラメータ (?cmd=off または ?cmd=on) が付いて起動された場合は自動実行
+    // URLパラメータ(?cmd=off 等)による自動実行
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const cmd = urlParams.get('cmd');
