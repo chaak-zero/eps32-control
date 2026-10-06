@@ -42,12 +42,14 @@
       const urlParams = new URLSearchParams(window.location.search);
       const cmd = urlParams.get('cmd');
       if (cmd) {
-        await sendCmd(cmd);
-
-         // ★送信完了後にキャッシュを残さないようパラメータをリセット
-         window.history.replaceState({}, document.title, window.location.pathname);
+      // 1. コマンド送信実行
+      await sendCmd(cmd);
+    
+      // 2. 次回のショートカット呼び出しで再読み込みさせるため、パラメータをクリア
+      window.history.replaceState({}, document.title, window.location.pathname);
       }
     };
+
   </script>
 </body>
 </html>
