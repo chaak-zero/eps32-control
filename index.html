@@ -38,11 +38,14 @@
     }
 
     // URLパラメータ(?cmd=off 等)による自動実行
-    window.onload = () => {
+    window.onload = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const cmd = urlParams.get('cmd');
       if (cmd) {
-        sendCmd(cmd);
+        await sendCmd(cmd);
+
+         // ★送信完了後にキャッシュを残さないようパラメータをリセット
+         window.history.replaceState({}, document.title, window.location.pathname);
       }
     };
   </script>
