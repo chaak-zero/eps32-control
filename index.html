@@ -30,7 +30,6 @@
       statusEl.textContent = "送信中: " + sendString + "...";
 
       try {
-        // デバイス選択要求（ダイアログを表示）
         var device = await navigator.bluetooth.requestDevice({
           filters: [{ name: 'ESP32_Charge_Controller' }],
           optionalServices: [SERVICE_UUID]
@@ -46,31 +45,33 @@
 
         statusEl.textContent = "送信成功: " + sendString;
 
-        // 300ms後に接続を切断
         await new Promise(function(resolve) { setTimeout(resolve, 300); });
         if (device.gatt.connected) {
           await device.gatt.disconnect();
         }
 
       } catch (error) {
-        // エラーオブジェクトを安全に文字列化して表示
         var errMsg = error && error.message ? error.message : String(error);
         statusEl.textContent = "エラー: " + errMsg;
       }
     }
 
-    // URLパラメータ（ショートカット起動時）
-    window.onload = function() {
+    // パラメータ読み込み＆自動実行
+    function checkAndRunParam() {
       var urlParams = new URLSearchParams(window.location.search);
       var cmd = urlParams.get('cmd');
       
       if (cmd) {
+        var statusEl = document.getElementById("status");
+        statusEl.textContent = "コマンド検知: " + cmd + " (実行中...)";
         setTimeout(function() {
           sendCmd(cmd);
           window.history.replaceState({}, document.title, window.location.pathname);
-        }, 500);
+        }, 800);
       }
-    };
+    }
+
+    window.onload = checkAndRunParam;
   </script>
 </body>
 </html>
