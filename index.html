@@ -7,7 +7,7 @@
   <style>
     body { font-family: sans-serif; margin: 20px; }
     button { padding: 15px 25px; font-size: 18px; margin: 10px 5px; cursor: pointer; }
-    #status { margin-top: 15px; font-weight: bold; font-size: 16px; color: #333; }
+    #status { margin-top: 15px; font-weight: bold; font-size: 16px; color: #333; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -30,27 +30,13 @@
       statusEl.textContent = "送信中: " + sendString + "...";
 
       try {
-        // ① ペアリング済みデバイスを取得試行
-        var device = null;
-        if (navigator.bluetooth && navigator.bluetooth.getDevices) {
-          var devices = await navigator.bluetooth.getDevices();
-          for (var i = 0; i < devices.length; i++) {
-            if (devices[i].name === 'ESP32_Charge_Controller') {
-              device = devices[i];
-              break;
-            }
-          }
-        }
+        // デバイス選択要求（ダイアログを表示）
+        var device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'ESP32_Charge_Controller' }],
+          optionalServices: [SERVICE_UUID]
+        });
 
-        // ② 見つからなければ新規ペアリング要求（ダイアログ表示）
-        if (!device) {
-          device = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'ESP32_Charge_Controller' }],
-            optionalServices: [SERVICE_UUID]
-          });
-        }
-
-        // ③ GATT接続と送信
+        statusEl.textContent = "接続中...";
         var server = await device.gatt.connect();
         var service = await server.getPrimaryService(SERVICE_UUID);
         var characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
@@ -60,19 +46,20 @@
 
         statusEl.textContent = "送信成功: " + sendString;
 
-        // ④ 300ms待ってから安全に切断
+        // 300ms後に接続を切断
         await new Promise(function(resolve) { setTimeout(resolve, 300); });
         if (device.gatt.connected) {
           await device.gatt.disconnect();
         }
 
       } catch (error) {
-        statusEl.textContent = "エラー: " + error.message;
-        console.log("BLE Error: ", error);
+        // エラーオブジェクトを安全に文字列化して表示
+        var errMsg = error && error.message ? error.message : String(error);
+        statusEl.textContent = "エラー: " + errMsg;
       }
     }
 
-    // URLパラメータの自動実行処理
+    // URLパラメータ（ショートカット起動時）
     window.onload = function() {
       var urlParams = new URLSearchParams(window.location.search);
       var cmd = urlParams.get('cmd');
