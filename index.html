@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 充電制御</title>
+  <title>ESP32-S3 充電制御</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    button { padding: 15px 25px; font-size: 18px; margin: 10px 5px; cursor: pointer; }
-    #status { margin-top: 15px; font-weight: bold; font-size: 16px; color: #333; word-break: break-all; }
+    body { font-family: sans-serif; margin: 20px; text-align: center; }
+    button { padding: 15px 25px; font-size: 18px; margin: 10px; cursor: pointer; }
+    #status { margin-top: 20px; font-weight: bold; font-size: 18px; color: #333; word-break: break-all; }
   </style>
 </head>
 <body>
-  <h2>ESP32 充電制御</h2>
+  <h2>ESP32-S3 充電制御</h2>
   
   <button onclick="sendCmd('off')">充電停止 (OFF)</button>
   <button onclick="sendCmd('on')">充電開始 (ON)</button>
@@ -45,6 +45,7 @@
 
         statusEl.textContent = "送信成功: " + sendString;
 
+        // 300ms後に接続を切断
         await new Promise(function(resolve) { setTimeout(resolve, 300); });
         if (device.gatt.connected) {
           await device.gatt.disconnect();
@@ -56,22 +57,17 @@
       }
     }
 
-    // パラメータ読み込み＆自動実行
-    function checkAndRunParam() {
+    // URLパラメータ検知して自動実行
+    window.onload = function() {
       var urlParams = new URLSearchParams(window.location.search);
       var cmd = urlParams.get('cmd');
-      
       if (cmd) {
-        var statusEl = document.getElementById("status");
-        statusEl.textContent = "コマンド検知: " + cmd + " (実行中...)";
         setTimeout(function() {
           sendCmd(cmd);
           window.history.replaceState({}, document.title, window.location.pathname);
-        }, 800);
+        }, 500);
       }
-    }
-
-    window.onload = checkAndRunParam;
+    };
   </script>
 </body>
 </html>
