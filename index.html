@@ -15,43 +15,48 @@
     const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
     async function sendCmd(cmd) {
-      let device = null;
-      // 最大2回まで自動再試行
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
+      if (!cmd) return;
+      const sendString = cmd.trim().toUpperCase();
+
+      try {
+        let device = null;
+
+        // ① すでに過去に許可したデバイスがあるか確認（ダイアログを出さない）
+        if (navigator.bluetooth.getDevices) {
+          const devices = await navigator.bluetooth.getDevices();
+          device = devices.find(d => d.name === 'ESP32_Charge_Controller');
+        }
+
+        // ② 記憶されたデバイスがない場合のみ、ペアリング画面を表示する
+        if (!device) {
           device = await navigator.bluetooth.requestDevice({
             filters: [{ name: 'ESP32_Charge_Controller' }],
             optionalServices: [SERVICE_UUID]
           });
-
-          const server = await device.gatt.connect();
-          const service = await server.getPrimaryService(SERVICE_UUID);
-          const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-
-          const encoder = new TextEncoder();
-          await characteristic.writeValue(encoder.encode(cmd.toUpperCase()));
-
-          await new Promise(resolve => setTimeout(resolve, 300));
-          await device.gatt.disconnect();
-          return true; // 成功したらループを抜ける
-        } catch (error) {
-          console.log(`Attempt ${attempt} failed: ${error}`);
-          // 1回目失敗時は1秒待って再試行
-          if (attempt === 1) {
-            await new Promise(r => setTimeout(r, 1000));
-          }
         }
+
+        // GATT接続してデータを送信
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        const encoder = new TextEncoder();
+        await characteristic.writeValue(encoder.encode(sendString));
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+        // 自動切断は行わず、接続保持（必要に応じて）
+      } catch (error) {
+        console.log("BLE Error: " + error);
       }
-      return false;
     }
 
-    // URLパラメータの自動実行
+    // URLパラメータ（ショートカット等）での起動時
     window.onload = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const cmd = urlParams.get('cmd');
+      
       if (cmd) {
-        // 少し待ってから通信を開始（Bluefyの描画完了を待つ）
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
         await sendCmd(cmd);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
