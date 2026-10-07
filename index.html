@@ -3,64 +3,161 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 充電制御</title>
+  <title>ESP32 充電制御（高度通信版）</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    button { padding: 12px 24px; font-size: 16px; margin-right: 10px; cursor: pointer; }
+    #status { margin-top: 15px; font-weight: bold; padding: 10px; border-radius: 4px; }
+    .info { background-color: #e3f2fd; color: #0d47a1; }
+    .success { background-color: #e8f5e9; color: #1b5e20; }
+    .error { background-color: #ffebee; color: #b71c1c; }
+  </style>
 </head>
 <body>
   <h2>ESP32 充電制御</h2>
-  <button onclick="sendCmd('off')">充電停止 (OFF)</button>
-  <button onclick="sendCmd('on')">充電開始 (ON)</button>
+  
+  <button id="btnOff" onclick="handleManualCmd('OFF')">充電停止 (OFF)</button>
+  <button id="btnOn" onclick="handleManualCmd('ON')">充電開始 (ON)</button>
+
+  <div id="status" class="info">待機中</div>
 
   <script>
-    const SERVICE_UUID        = "4fa8f24c-038e-45b0-93e9-2b006836c256";
-    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    // 定数定義
+    const CONFIG = {
+      DEVICE_NAME: 'ESP32_Charge_Controller',
+      SERVICE_UUID: '4fa8f24c-038e-45b0-93e9-2b006836c256',
+      CHARACTERISTIC_UUID: 'beb5483e-36e1-4688-b7f5-ea07361b26a8',
+      TIMEOUT_MS: 5000,    // 5秒タイムアウト
+      MAX_RETRIES: 3       // 最大リトライ回数
+    };
 
-    async function sendCmd(cmd) {
-      if (!cmd) return;
-      const sendString = cmd.trim().toUpperCase();
+    // 二重送信防止用フラグ
+    let isProcessing = false;
 
-      try {
-        let device = null;
-
-        // ① すでに過去に許可したデバイスがあるか確認（ダイアログを出さない）
-        if (navigator.bluetooth.getDevices) {
-          const devices = await navigator.bluetooth.getDevices();
-          device = devices.find(d => d.name === 'ESP32_Charge_Controller');
-        }
-
-        // ② 記憶されたデバイスがない場合のみ、ペアリング画面を表示する
-        if (!device) {
-          device = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'ESP32_Charge_Controller' }],
-            optionalServices: [SERVICE_UUID]
-          });
-        }
-
-        // GATT接続してデータを送信
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-
-        const encoder = new TextEncoder();
-        await characteristic.writeValue(encoder.encode(sendString));
-
-        await new Promise(resolve => setTimeout(resolve, 300));
-        // 自動切断は行わず、接続保持（必要に応じて）
-      } catch (error) {
-        console.log("BLE Error: " + error);
-      }
+    // ステータス表示更新関数
+    function updateStatus(message, type = 'info') {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = type;
+      console.log(`[${type.toUpperCase()}] ${message}`);
     }
 
-    // URLパラメータ（ショートカット等）での起動時
-    window.onload = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const cmd = urlParams.get('cmd');
-      
-      if (cmd) {
-        await new Promise(r => setTimeout(r, 300));
-        await sendCmd(cmd);
-        window.history.replaceState({}, document.title, window.location.pathname);
+    // 遅延処理ユーティリティ
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // タイムアウト付きPromiseユーティリティ
+    function withTimeout(promise, timeoutMs) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('通信タイムアウト（応答なし）')), timeoutMs)
+        )
+      ]);
+    }
+
+    // BLEコマンド送信コア処理（自動リトライ付き）
+    async function executeBleCommand(command) {
+      if (isProcessing) {
+        updateStatus('現在通信処理中です。少々お待ちください...', 'info');
+        return false;
       }
-    };
+
+      isProcessing = true;
+      const sendString = command.trim().toUpperCase();
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
+        let device = null;
+        updateStatus(`BLE通信試行中 (${attempt}/${CONFIG.MAX_RETRIES})...`, 'info');
+
+        try {
+          await withTimeout((async () => {
+            // 1. デバイス要求/取得
+            if (navigator.bluetooth.getDevices) {
+              const devices = await navigator.bluetooth.getDevices();
+              device = devices.find(d => d.name === CONFIG.DEVICE_NAME);
+            }
+
+            if (!device) {
+              device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: CONFIG.DEVICE_NAME }],
+                optionalServices: [CONFIG.SERVICE_UUID]
+              });
+            }
+
+            // 2. GATTサーバー接続
+            const server = await device.gatt.connect();
+
+            try {
+              // 3. サービス & キャラクタリスティック取得
+              const service = await server.getPrimaryService(CONFIG.SERVICE_UUID);
+              const characteristic = await service.getCharacteristic(CONFIG.CHARACTERISTIC_UUID);
+
+              // 4. データ書き込み
+              const encoder = new TextEncoder();
+              await characteristic.writeValue(encoder.encode(sendString));
+              
+              // 安定化待機
+              await sleep(300);
+            } finally {
+              // 5. 必ず切断（リソース解放）
+              if (device && device.gatt.connected) {
+                await device.gatt.disconnect();
+              }
+            }
+          })(), CONFIG.TIMEOUT_MS);
+
+          // 送信成功
+          updateStatus(`送信成功: ${sendString}`, 'success');
+          isProcessing = false;
+          return true;
+
+        } catch (error) {
+          lastError = error;
+          console.warn(`試行 ${attempt} 失敗:`, error);
+          
+          if (attempt < CONFIG.MAX_RETRIES) {
+            // リトライ前の待機（回数に応じて待機時間を延ばす）
+            await sleep(attempt * 800);
+          }
+        }
+      }
+
+      // 全リトライ失敗
+      updateStatus(`通信失敗: ${lastError ? lastError.message : '不明なエラー'}`, 'error');
+      isProcessing = false;
+      return false;
+    }
+
+    // 手動ボタン押下時ハンドラ
+    async function handleManualCmd(cmd) {
+      await executeBleCommand(cmd);
+    }
+
+    // 画面ロード時処理（URLパラメータ自動パース）
+    window.addEventListener('DOMContentLoaded', async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const rawCmd = urlParams.get('cmd');
+
+      if (rawCmd) {
+        const cleanCmd = rawCmd.trim().toUpperCase();
+        if (cleanCmd === 'ON' || cleanCmd === 'OFF') {
+          updateStatus(`自動実行開始: ${cleanCmd}`, 'info');
+          
+          // ブラウザの初期化・DOM準備を少し待つ
+          await sleep(500);
+          
+          const success = await executeBleCommand(cleanCmd);
+          
+          // 再読み込みループ防止のためパラメータ消去
+          if (success) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } else {
+          updateStatus(`不正なコマンドです: ${rawCmd}`, 'error');
+        }
+      }
+    });
   </script>
 </body>
 </html>
