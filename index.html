@@ -3,63 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bluetooth 充電制御</title>
+  <title>充電制御 (Web Bluetooth)</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    button { font-size: 18px; padding: 15px 30px; margin: 10px; border-radius: 8px; border: none; background: #007aff; color: white; }
-    .off { background: #ff3b30; }
-    #status { margin-top: 20px; font-weight: bold; }
+    body { font-family: sans-serif; text-align: center; padding: 40px 20px; }
+    button { font-size: 20px; padding: 18px 36px; border-radius: 12px; border: none; background: #007aff; color: white; width: 100%; max-width: 300px; }
+    #status { margin-top: 20px; color: #555; }
   </style>
 </head>
 <body>
 
-  <h2>ESP32 充電制御 (Web Bluetooth)</h2>
-  <p>「デバイスに接続しますか？」が表示されたらタップしてください。</p>
-
-  <button id="connectBtn" onclick="connectAndSend()">デバイスに接続して実行</button>
-  <div id="status">待機中...</div>
+  <button onclick="startBleProcess()">デバイスに接続</button>
+  <div id="status">ボタンを押すと接続ダイアログが表示されます</div>
 
   <script>
-    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-    const CHARACTERISTIC_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+    // 先ほど提示いただいたESP32のコード内のUUIDと完全一致させています
+    const SERVICE_UUID        = "4fa8f24c-038e-45b0-93e9-2b006836c256";
+    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-    // URLパラメーターから cmd=off または cmd=on を取得
+    // URLパラメーターから cmd=off や cmd=on を取得
     const urlParams = new URLSearchParams(window.location.search);
-    const cmdParam = urlParams.get('cmd') ? urlParams.get('cmd').toUpperCase() : 'OFF';
+    const cmd = (urlParams.get('cmd') || 'off').toLowerCase();
 
-    document.getElementById('status').innerText = `実行予定コマンド: ${cmdParam}`;
-
-    async function connectAndSend() {
+    async function startBleProcess() {
       const statusDiv = document.getElementById('status');
-      statusDiv.innerText = "接続処理中...";
-
+      
       try {
-        // Bluetooth機器の検索と接続ダイアログの表示
+        // ★ ここでiOS / Bluefy 標準の「デバイスに接続しますか？」ポップアップが直接呼び出されます
         const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'ESP32-PowerControl' }],
+          filters: [{ name: 'ESP32_Charge_Controller' }],
           optionalServices: [SERVICE_UUID]
         });
 
-        statusDiv.innerText = "デバイス接続中...";
+        statusDiv.innerText = "接続中...";
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(SERVICE_UUID);
-        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_RX);
+        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-        // コマンド送信
+        // コマンド（"off" または "on"）を送信
         const encoder = new TextEncoder();
-        await characteristic.writeValue(encoder.encode(cmdParam));
+        await characteristic.writeValue(encoder.encode(cmd));
 
-        statusDiv.innerText = `送信成功: ${cmdParam} (充電制御完了)`;
+        statusDiv.innerText = `送信完了: ${cmd.toUpperCase()}`;
 
-        // 送信後に自動切断
+        // 送信完了後に自動切断
         setTimeout(() => {
           device.gatt.disconnect();
-          statusDiv.innerText += " -> 切断完了";
+          statusDiv.innerText += " (切断完了)";
         }, 1000);
 
       } catch (error) {
-        console.error(error);
-        statusDiv.innerText = "エラー: " + error.message;
+        statusDiv.innerText = "キャンセルまたはエラー: " + error.message;
       }
     }
   </script>
