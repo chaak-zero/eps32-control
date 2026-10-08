@@ -3,71 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32-S3 充電制御</title>
+  <title>Bluetooth 充電制御</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; text-align: center; }
-    button { padding: 15px 25px; font-size: 18px; margin: 10px; cursor: pointer; }
-    #status { margin-top: 20px; font-weight: bold; font-size: 18px; color: #333; word-break: break-all; }
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    button { font-size: 18px; padding: 15px 30px; margin: 10px; border-radius: 8px; border: none; background: #007aff; color: white; }
+    .off { background: #ff3b30; }
+    #status { margin-top: 20px; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h2>ESP32-S3 充電制御</h2>
-  
-  <button onclick="sendCmd('off')">充電停止 (OFF)</button>
-  <button onclick="sendCmd('on')">充電開始 (ON)</button>
 
-  <div id="status">待機中</div>
+  <h2>ESP32 充電制御 (Web Bluetooth)</h2>
+  <p>「デバイスに接続しますか？」が表示されたらタップしてください。</p>
+
+  <button id="connectBtn" onclick="connectAndSend()">デバイスに接続して実行</button>
+  <div id="status">待機中...</div>
 
   <script>
-    var SERVICE_UUID        = "4fa8f24c-038e-45b0-93e9-2b006836c256";
-    var CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+    const CHARACTERISTIC_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
-    async function sendCmd(cmd) {
-      if (!cmd) return;
-      
-      var statusEl = document.getElementById("status");
-      var sendString = cmd.toString().trim().toUpperCase();
-      statusEl.textContent = "送信中: " + sendString + "...";
+    // URLパラメーターから cmd=off または cmd=on を取得
+    const urlParams = new URLSearchParams(window.location.search);
+    const cmdParam = urlParams.get('cmd') ? urlParams.get('cmd').toUpperCase() : 'OFF';
+
+    document.getElementById('status').innerText = `実行予定コマンド: ${cmdParam}`;
+
+    async function connectAndSend() {
+      const statusDiv = document.getElementById('status');
+      statusDiv.innerText = "接続処理中...";
 
       try {
-        var device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'ESP32_Charge_Controller' }],
+        // Bluetooth機器の検索と接続ダイアログの表示
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'ESP32-PowerControl' }],
           optionalServices: [SERVICE_UUID]
         });
 
-        statusEl.textContent = "接続中...";
-        var server = await device.gatt.connect();
-        var service = await server.getPrimaryService(SERVICE_UUID);
-        var characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        statusDiv.innerText = "デバイス接続中...";
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_RX);
 
-        var encoder = new TextEncoder();
-        await characteristic.writeValue(encoder.encode(sendString));
+        // コマンド送信
+        const encoder = new TextEncoder();
+        await characteristic.writeValue(encoder.encode(cmdParam));
 
-        statusEl.textContent = "送信成功: " + sendString;
+        statusDiv.innerText = `送信成功: ${cmdParam} (充電制御完了)`;
 
-        // 300ms後に接続を切断
-        await new Promise(function(resolve) { setTimeout(resolve, 300); });
-        if (device.gatt.connected) {
-          await device.gatt.disconnect();
-        }
+        // 送信後に自動切断
+        setTimeout(() => {
+          device.gatt.disconnect();
+          statusDiv.innerText += " -> 切断完了";
+        }, 1000);
 
       } catch (error) {
-        var errMsg = error && error.message ? error.message : String(error);
-        statusEl.textContent = "エラー: " + errMsg;
+        console.error(error);
+        statusDiv.innerText = "エラー: " + error.message;
       }
     }
-
-    // URLパラメータ検知して自動実行
-    window.onload = function() {
-      var urlParams = new URLSearchParams(window.location.search);
-      var cmd = urlParams.get('cmd');
-      if (cmd) {
-        setTimeout(function() {
-          sendCmd(cmd);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }, 500);
-      }
-    };
   </script>
 </body>
 </html>
